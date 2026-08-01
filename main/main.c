@@ -15,14 +15,24 @@
 static const char *TAG = "webserver";
 
 // Updated HTML page with "Turn PC On" button text
-const char* html_page = 
-    "<!DOCTYPE html><html>"
-    "<head><title>ESP32-C3 Web Server</title>"
-    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-    "<style>body{text-align:center; font-family:Arial;} .btn{padding:20px; font-size:24px; color:white; background-color:#008CBA; border:none; cursor:pointer;}</style></head>"
-    "<body><h1>ESP32-C3 SuperMini Control</h1>"
-    "<p><a href=\"/toggle\"><button class=\"btn\">Turn PC On</button></a></p>"
-    "</body></html>";
+const char* html_page =
+"<!DOCTYPE html>"
+"<html>"
+"<head>"
+"<title>PC Power</title>"
+"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+"<style>"
+"body{font-family:Arial;text-align:center;margin-top:80px;background:#202124;color:white;}"
+".btn{padding:20px 40px;font-size:28px;border:none;border-radius:10px;"
+"background:#28a745;color:white;cursor:pointer;}"
+".btn:hover{background:#218838;}"
+"</style>"
+"</head>"
+"<body>"
+"<h1>ESP32 PC Power Switch</h1>"
+"<p><a href=\"/power\"><button class=\"btn\">Turn PC On</button></a></p>"
+"</body>"
+"</html>";
 
 // Handler for the root path ("/")
 static esp_err_t root_get_handler(httpd_req_t *req) {
@@ -73,6 +83,13 @@ static const httpd_uri_t toggle = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t power = {
+    .uri      = "/power",
+    .method   = HTTP_GET,
+    .handler  = power_get_handler,
+    .user_ctx = NULL
+};
+
 // Start the HTTP web server on port 80
 static httpd_handle_t start_webserver(void) {
     httpd_handle_t server = NULL;
@@ -82,7 +99,7 @@ static httpd_handle_t start_webserver(void) {
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &root);
-        httpd_register_uri_handler(server, &toggle);
+        httpd_register_uri_handler(server, &power);
         return server;
     }
     ESP_LOGI(TAG, "Error starting server!");
@@ -101,6 +118,36 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         start_webserver();
     }
+}
+
+// Handler for PC power button
+static esp_err_t power_get_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Power button pressed");
+
+    // Turn LED ON (active low)
+    gpio_set_level(GPIO_NUM_8, 0);
+
+    // Press PC power button
+    gpio_set_level(GPIO_NUM_1, 1);
+
+    // Send browser back immediately
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_send(req, NULL, 0);
+
+    // Hold button for 1 second
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // Release power button
+    gpio_set_level(GPIO_NUM_1, 0);
+
+    // Turn LED OFF
+    gpio_set_level(GPIO_NUM_8, 1);
+
+    ESP_LOGI(TAG, "Power button released");
+
+    return ESP_OK;
 }
 
 void app_main(void) {
